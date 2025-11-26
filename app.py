@@ -98,7 +98,11 @@ with col2:
 
 def save_rating():
     try:
-        final_score = st.session_state.num_input
+        if "num_input" in st.session_state:
+             final_score = st.session_state.num_input
+        else:
+             final_score = st.session_state.slider_input
+
         rater_name = st.session_state.get("rater_name", "")
         
         data = {"score": float(final_score)}
@@ -114,11 +118,11 @@ def save_rating():
         st.error(f"Save failed: {e}")
 
 def update_slider():
-    st.session_state.num_input = st.session_state.slider_input
+    st.session_state.score_val = st.session_state.slider_input
 
 def update_num():
-    st.session_state.slider_input = st.session_state.num_input
-    save_rating()
+    st.session_state.score_val = st.session_state.num_input
+    save_rating() 
 
 st.write("### How attractive is this face?")
 
@@ -140,6 +144,7 @@ with col_input:
         max_value=5.0, 
         step=0.1, 
         key="num_input", 
+        value=st.session_state.score_val,
         on_change=update_num,
         label_visibility="collapsed"
     )
