@@ -1,7 +1,8 @@
 import streamlit as st
-from supabase import create_client
+from supabase import create_client, Client
 import pandas as pd
 import os
+import time
 
 st.set_page_config(page_title="Beauty Rater", layout="centered")
 st.title("Human Beauty Rater 🌍")
@@ -14,47 +15,46 @@ def init_connection():
 
 supabase = init_connection()
 
-# ---------------------------
-# FETCH DATA (WITH PAGINATION)
-# ---------------------------
-# Supabase limits responses to 1000 rows. We must loop to get everything.
 all_rows = []
 start = 0
-batch_size = 1000 
+batch_size = 1000
 
 while True:
-    try:
-        # Fetch chunk of data
-        response = supabase.table("ratings").select("*").range(start, start + batch_size - 1).execute()
-        rows = response.data
-        
-        # If no data returned, we are done
-        if not rows:
+    rows = []
+    for attempt in range(3):
+        try:
+            response = supabase.table("ratings").select("*").range(start, start + batch_size - 1).execute()
+            rows = response.data
             break
-            
-        all_rows.extend(rows)
+        except Exception as e:
+            if attempt < 2:
+                time.sleep(1)
+                continue
+            else:
+                st.error(f"Database Fetch Failed:\n\n{e}")
+                st.stop()
+    
+    if not rows:
+        break
         
-        # If we got less than the batch size, we reached the end
-        if len(rows) < batch_size:
-            break
-            
-        start += batch_size
+    all_rows.extend(rows)
+    
+    if len(rows) < batch_size:
+        break
         
-    except Exception as e:
-        st.error(f"Database Fetch Failed at index {start}:\n\n{e}")
-        st.stop()
+    start += batch_size
+    time.sleep(0.1)
 
 df = pd.DataFrame(all_rows)
 
 if df.empty:
-    st.warning("⚠️ Database returned 0 rows.")
-    st.info("This usually means **RLS is enabled**. Disable RLS for testing.")
+    st.warning("Database returned 0 rows.")
     st.stop()
 
 df.columns = df.columns.str.strip()
 
 if "score" not in df.columns:
-    st.error(f"'score' column missing. Columns found: {df.columns.tolist()}")
+    st.error("Column 'score' not found.")
     st.stop()
 
 df["score"] = pd.to_numeric(df["score"], errors="coerce")
