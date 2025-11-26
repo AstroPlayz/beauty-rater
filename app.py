@@ -21,6 +21,11 @@ except Exception as e:
     st.error(f"Database Connection Failed: {e}")
     st.stop()
 
+if df.empty:
+    st.warning("⚠️ Database returned 0 rows.")
+    st.info("This usually means **Row Level Security (RLS)** is on. Go to Supabase > Table Editor > 'ratings' > Turn OFF RLS.")
+    st.stop()
+
 rated_df = df[df['score'].notna() & (df['score'] != 0)]
 total = len(df)
 rated_count = len(rated_df)
