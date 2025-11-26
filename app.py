@@ -14,13 +14,37 @@ def init_connection():
 
 supabase = init_connection()
 
-try:
-    response = supabase.table("ratings").select("*").range(0, 25000).execute()
-    df = pd.DataFrame(response.data)
+# ---------------------------
+# FETCH DATA (WITH PAGINATION)
+# ---------------------------
+# Supabase limits responses to 1000 rows. We must loop to get everything.
+all_rows = []
+start = 0
+batch_size = 1000 
 
-except Exception as e:
-    st.error(f"Database Connection Failed:\n\n{e}")
-    st.stop()
+while True:
+    try:
+        # Fetch chunk of data
+        response = supabase.table("ratings").select("*").range(start, start + batch_size - 1).execute()
+        rows = response.data
+        
+        # If no data returned, we are done
+        if not rows:
+            break
+            
+        all_rows.extend(rows)
+        
+        # If we got less than the batch size, we reached the end
+        if len(rows) < batch_size:
+            break
+            
+        start += batch_size
+        
+    except Exception as e:
+        st.error(f"Database Fetch Failed at index {start}:\n\n{e}")
+        st.stop()
+
+df = pd.DataFrame(all_rows)
 
 if df.empty:
     st.warning("⚠️ Database returned 0 rows.")
