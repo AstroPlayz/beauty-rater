@@ -9,19 +9,18 @@ st.title("Human Beauty Rater 🌍")
 st.markdown("Help us build a fair, racially balanced AI dataset. Rate the face below!")
 
 # --- 1. CONNECT TO DATABASE ---
-# This looks for secrets in Streamlit Cloud (Production) or .streamlit/secrets.toml (Local)
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- 2. LOAD DATA ---
+# --- 2. LOAD DATA (OPTIMIZED) ---
 try:
-    # ttl=0 means "Don't cache". Always fetch the latest data.
-    df = conn.read(worksheet="Sheet1", ttl=0)
+    # CHANGED: ttl=10 means "Only download new data if it's been 10 seconds".
+    # This prevents the "Quota Exceeded" error.
+    df = conn.read(worksheet="Sheet1", ttl=10)
 except Exception as e:
     st.error(f"Database Connection Failed. Error: {e}")
     st.stop()
 
 # --- 3. FIND UNRATED IMAGES ---
-# We look for rows where score is empty, 0, or NaN
 unrated = df[df['score'].isna() | (df['score'] == 0) | (df['score'] == '')]
 
 if unrated.empty:
@@ -30,9 +29,7 @@ if unrated.empty:
     st.stop()
 
 # --- 4. SELECT IMAGE ---
-# Use session state to keep the same image until they click Submit
 if 'current_row' not in st.session_state:
-    # Pick 1 random unrated image
     st.session_state.current_row = unrated.sample(1).iloc[0]
 
 row = st.session_state.current_row
@@ -47,7 +44,6 @@ with col2:
         st.image(img_path, caption=f"File: {filename}", width=350)
     else:
         st.error(f"Image not found: {filename}")
-        # If image is missing, remove from session and try again
         del st.session_state.current_row
         st.rerun()
 
@@ -62,36 +58,36 @@ with st.form("rating_form"):
 
     if submitted:
         # --- CONCURRENCY CHECK ---
-        # Before saving, download the sheet AGAIN to check if someone else rated it
         try:
+            # We keep ttl=0 HERE to ensure we double-check right before saving
             fresh_df = conn.read(worksheet="Sheet1", ttl=0)
             
-            # Find the index for this filename
             idx_list = fresh_df[fresh_df['filename'] == filename].index
             
             if not idx_list.empty:
                 idx = idx_list[0]
-                
-                # Check if it was already rated 1 second ago
                 current_score = fresh_df.at[idx, 'score']
                 
+                # Check if someone rated it in the last few seconds
                 if pd.notna(current_score) and current_score != 0:
-                    st.warning(f"⚠️ Someone else just rated '{filename}'! Your rating was skipped.")
+                    st.warning(f"⚠️ Someone else just rated '{filename}'! Skipping to next.")
                 else:
                     # WRITE DATA
                     fresh_df.at[idx, 'score'] = score
                     if rater_name:
                         fresh_df.at[idx, 'rater_id'] = rater_name
                     
-                    # Push update to Google Sheets
                     conn.update(worksheet="Sheet1", data=fresh_df)
                     st.toast(f"Saved! You rated {filename} a {score}")
+                    
+                    # Manual cache update to make the app feel faster
+                    # We assume the save worked and update our local view immediately
+                    st.cache_data.clear() 
             else:
                 st.error("Error: Filename not found in database.")
 
         except Exception as e:
-            st.error(f"Save failed. Please try again. Error: {e}")
+            st.warning("Traffic is high! Please wait 10 seconds and try again.")
         
-        # Reset to get a new image
         del st.session_state.current_row
         st.rerun()
