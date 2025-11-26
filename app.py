@@ -1,5 +1,5 @@
 import streamlit as st
-from supabase import create_client, Client
+from supabase import create_client
 import pandas as pd
 import os
 import time
@@ -15,37 +15,42 @@ def init_connection():
 
 supabase = init_connection()
 
-all_rows = []
-start = 0
-batch_size = 1000
+if 'score_val' not in st.session_state:
+    st.session_state.score_val = 3.0
 
-while True:
-    rows = []
-    for attempt in range(3):
-        try:
-            response = supabase.table("ratings").select("*").range(start, start + batch_size - 1).execute()
-            rows = response.data
+def load_data():
+    all_rows = []
+    start = 0
+    batch_size = 1000
+    
+    while True:
+        rows = []
+        for attempt in range(3):
+            try:
+                response = supabase.table("ratings").select("*").range(start, start + batch_size - 1).execute()
+                rows = response.data
+                break
+            except Exception:
+                if attempt < 2:
+                    time.sleep(1)
+                    continue
+                else:
+                    st.error("Database Fetch Failed")
+                    st.stop()
+        
+        if not rows:
             break
-        except Exception as e:
-            if attempt < 2:
-                time.sleep(1)
-                continue
-            else:
-                st.error(f"Database Fetch Failed:\n\n{e}")
-                st.stop()
-    
-    if not rows:
-        break
+            
+        all_rows.extend(rows)
         
-    all_rows.extend(rows)
-    
-    if len(rows) < batch_size:
-        break
-        
-    start += batch_size
-    time.sleep(0.1)
+        if len(rows) < batch_size:
+            break
+            
+        start += batch_size
+        time.sleep(0.1)
+    return pd.DataFrame(all_rows)
 
-df = pd.DataFrame(all_rows)
+df = load_data()
 
 if df.empty:
     st.warning("Database returned 0 rows.")
@@ -91,25 +96,55 @@ with col2:
         del st.session_state.current_row
         st.rerun()
 
-with st.form("rating_form"):
-    st.write("### How attractive is this face?")
-    score = st.slider("Score", 1.0, 5.0, 3.0, 0.1)
-    rater_name = st.text_input("Your Name (Optional)")
-    
-    submit = st.form_submit_button("Submit Rating", type="primary")
+def save_rating():
+    try:
+        final_score = st.session_state.num_input
+        rater_name = st.session_state.get("rater_name", "")
+        
+        data = {"score": float(final_score)}
+        if rater_name:
+            data["rater_id"] = rater_name.strip()
 
-    if submit:
-        try:
-            data = {"score": float(score)}
-            if rater_name:
-                data["rater_id"] = rater_name.strip()
-
-            supabase.table("ratings").update(data).eq("filename", filename).execute()
-
-            st.toast(f"Saved! You rated **{filename}** a **{score}**")
-
-        except Exception as e:
-            st.error(f"Save failed:\n\n{e}")
-
+        supabase.table("ratings").update(data).eq("filename", filename).execute()
+        st.toast(f"Saved! You rated **{filename}** a **{final_score}**")
+        
         del st.session_state.current_row
-        st.rerun()
+        
+    except Exception as e:
+        st.error(f"Save failed: {e}")
+
+def update_slider():
+    st.session_state.num_input = st.session_state.slider_input
+
+def update_num():
+    st.session_state.slider_input = st.session_state.num_input
+    save_rating()
+
+st.write("### How attractive is this face?")
+
+st.slider(
+    "Select Score", 
+    1.0, 5.0, 
+    key="slider_input", 
+    value=st.session_state.score_val, 
+    on_change=update_slider,
+    label_visibility="collapsed"
+)
+
+col_input, col_btn = st.columns([1, 2])
+
+with col_input:
+    st.number_input(
+        "Type Score (Enter to Submit)", 
+        min_value=1.0, 
+        max_value=5.0, 
+        step=0.1, 
+        key="num_input", 
+        on_change=update_num,
+        label_visibility="collapsed"
+    )
+
+with col_btn:
+    st.button("Submit Rating", type="primary", on_click=save_rating, use_container_width=True)
+
+st.text_input("Your Name (Optional)", key="rater_name")
