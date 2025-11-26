@@ -98,11 +98,7 @@ with col2:
 
 def save_rating():
     try:
-        if "num_input" in st.session_state:
-             final_score = st.session_state.num_input
-        else:
-             final_score = st.session_state.slider_input
-
+        final_score = st.session_state.score_val
         rater_name = st.session_state.get("rater_name", "")
         
         data = {"score": float(final_score)}
@@ -122,7 +118,8 @@ def update_slider():
 
 def update_num():
     st.session_state.score_val = st.session_state.num_input
-    save_rating() 
+    # Optional: auto-save on Enter for number input
+    # save_rating() 
 
 st.write("### How attractive is this face?")
 
@@ -139,7 +136,7 @@ col_input, col_btn = st.columns([1, 2])
 
 with col_input:
     st.number_input(
-        "Type Score (Enter to Submit)", 
+        "Type Score", 
         min_value=1.0, 
         max_value=5.0, 
         step=0.1, 
