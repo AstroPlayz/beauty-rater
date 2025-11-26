@@ -21,6 +21,18 @@ except Exception as e:
     st.error(f"Database Connection Failed: {e}")
     st.stop()
 
+# --- CRITICAL FIX: Check if database is empty ---
+if df.empty:
+    st.warning("⚠️ The database is connected, but it has NO DATA.")
+    st.info("Go to Supabase > Table Editor > 'ratings' table > Insert > Import Data from CSV.")
+    st.stop()
+
+# --- Check if 'score' column exists (Handles casing issues) ---
+if 'score' not in df.columns:
+    st.error(f"Column 'score' not found. Found columns: {df.columns.tolist()}")
+    st.info("Please check your Supabase table columns. They must be lowercase: 'filename', 'score', 'rater_id'.")
+    st.stop()
+
 rated_df = df[df['score'].notna() & (df['score'] != 0)]
 total = len(df)
 rated_count = len(rated_df)
